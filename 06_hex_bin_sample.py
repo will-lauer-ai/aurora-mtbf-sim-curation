@@ -35,10 +35,10 @@ import h3
 import lake_client
 from geofence import load_geofence, point_in_geofence
 
-DATA_EXPLORER_URSA_PLAYBACK_BASE_URL = "https://neuron.oci.applied.dev/data_explorer/v2/log/playback"
-DATA_EXPLORER_LOG_PLAYBACK_BASE_URL = "https://neuron.oci.applied.dev/data_explorer/library/log/playback"
-DATA_EXPLORER_DRIVE_BASE_URL = "https://neuron.oci.applied.dev/data_explorer/library/drives"
 FRONTIER_ADP_BASE_URL = "https://frontier.prod.applied.dev"
+DATA_EXPLORER_URSA_PLAYBACK_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/v2/log/playback"
+DATA_EXPLORER_LOG_PLAYBACK_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/library/log/playback"
+DATA_EXPLORER_DRIVE_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/library/drives"
 ADP_QUERY_HINT = (
     "LogSim replay URLs require the ADP LogSim simulation UUID. If raw_data_uri "
     "is a LogSim path, this script infers it from the final S3 path component; "
@@ -133,25 +133,23 @@ def add_lookup_links(runs: list[dict]) -> list[dict]:
         ursa_run_uuid = rr.get("run_uuid") or rr.get("ursa_run_uuid")
         data_explorer_log_path = get_data_explorer_log_path(rr)
         rr["data_explorer_log_path"] = data_explorer_log_path
-        # Primary direct source-log playback route. The v2 visualizer accepts an Ursa log ID via
-        # `?ursa=...`; this is the ID we reliably have from ursa_log_management.public.runs.
+        # Primary direct source-drive playback route. data_explorer_uuid matches iceberg.run_info.uuid
+        # for the converted Frontier drive run; it must be opened on the Frontier ADP host, not Neuron.
+        rr["data_explorer_drive_run_playback_url"] = f"{DATA_EXPLORER_DRIVE_BASE_URL}/{dx}/playback" if dx else None
+        # Debug/secondary candidates only. These can fail if VizKit playback metadata is unavailable
+        # or if the multi-source logPath index does not contain the Frontier log.
         rr["data_explorer_ursa_playback_url"] = (
             f"{DATA_EXPLORER_URSA_PLAYBACK_BASE_URL}?ursa={quote(str(ursa_run_uuid), safe='')}"
             if ursa_run_uuid else None
         )
-        # Older/feature-flagged multi-source playback route. Keep as a secondary candidate only;
-        # it can report `Log path ... not found` in Frontier depending on which index backs the UI.
         rr["data_explorer_log_playback_url"] = (
             f"{DATA_EXPLORER_LOG_PLAYBACK_BASE_URL}?logPath={quote(data_explorer_log_path, safe='')}"
             if data_explorer_log_path else None
         )
-        # This route works only when dx is a DriveRun UUID. Frontier's data_explorer_uuid is often a
-        # raw/source log identifier, so keep it as a tertiary candidate rather than the primary link.
-        rr["data_explorer_drive_run_playback_url"] = f"{DATA_EXPLORER_DRIVE_BASE_URL}/{dx}/playback" if dx else None
         rr["data_explorer_playback_url"] = (
-            rr["data_explorer_ursa_playback_url"]
+            rr["data_explorer_drive_run_playback_url"]
+            or rr["data_explorer_ursa_playback_url"]
             or rr["data_explorer_log_playback_url"]
-            or rr["data_explorer_drive_run_playback_url"]
         )
         # Backwards-compatible alias.
         rr["data_explorer_url"] = rr["data_explorer_playback_url"]

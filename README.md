@@ -151,32 +151,32 @@ https://frontier.prod.applied.dev/log_sim/results/sim/<adp_logsim_uuid>/playback
 For source drive rows, this field may be empty because there is not yet an ADP
 LogSim simulation run to replay. In that case, use `data_explorer_playback_url`
 to open the valid source drive/log playback directly. The primary generated
-source-log URL uses the v2 Data Explorer visualizer with the Ursa run UUID:
+source-drive URL uses Frontier ADP's Data Explorer drive route with
+`data_explorer_uuid`:
 
 ```text
-https://neuron.oci.applied.dev/data_explorer/v2/log/playback?ursa=<ursa_run_uuid>
+https://frontier.prod.applied.dev/data_explorer/library/drives/<data_explorer_uuid>/playback
 ```
 
-The script also writes older candidate URLs for debugging:
+This matches the Applied frontend path in `applied3`:
+
+```ts
+getLinkInProduct(Product.DATA_EXPLORER, `/library/drives/${runId}/playback`)
+```
+
+The important bit is the **host**: for Frontier logs, open this on
+`frontier.prod.applied.dev`, not `neuron.oci.applied.dev`.
+
+The script also writes older/debug candidate URLs:
 
 ```text
-https://neuron.oci.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-data-explorer-log-path>
-https://neuron.oci.applied.dev/data_explorer/library/drives/<data_explorer_uuid>/playback
+https://frontier.prod.applied.dev/data_explorer/v2/log/playback?ursa=<ursa_run_uuid>
+https://frontier.prod.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-data-explorer-log-path>
 ```
 
-Those older forms can fail in Frontier because `logPath`/`data_explorer_uuid` are
-not the same as the Ursa source-run UUID used by the v2 visualizer.
-
-The script also keeps a secondary candidate `data_explorer_drive_run_playback_url`:
-
-```text
-https://neuron.oci.applied.dev/data_explorer/library/drives/<data_explorer_uuid>/playback
-```
-
-That secondary route only works when the ID is an actual DriveRun UUID; for many
-Frontier rows `data_explorer_uuid` is a raw/source log identifier, not a
-DriveRun/simulation UUID. Then use the selected `run_uuid` / `custom_id` to
-create or locate a LogSim run, or resolve the bridge through
+Those can fail when VizKit playback metadata or the multi-source logPath index is
+not available. Then use the selected `run_uuid` / `custom_id` to create or locate
+a LogSim run, or resolve the bridge through
 `Ursa DescribeRun(...).sim_run_info.adp_uuid`.
 
 ## Geofences
