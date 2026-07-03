@@ -120,7 +120,7 @@ When this script runs, it prints a deduplicated Frontier ADP LogSim replay URL
 list to stderr and also writes it to `--urls-output` as TSV:
 
 ```text
-custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    raw_data_uri    note
+custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    data_explorer_log_playback_url    data_explorer_drive_run_playback_url    raw_data_uri    note
 ```
 
 Use `--no-print-urls` if you only want the TSV file and do not want the full
@@ -150,14 +150,24 @@ https://frontier.prod.applied.dev/log_sim/results/sim/<adp_logsim_uuid>/playback
 
 For source drive rows, this field may be empty because there is not yet an ADP
 LogSim simulation run to replay. In that case, use `data_explorer_playback_url`
-to open the valid source drive/log playback directly:
+to open the valid source drive/log playback directly. The primary generated
+source-log URL uses the raw S3 log path:
+
+```text
+https://neuron.oci.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-s3-path>
+```
+
+The script also keeps a secondary candidate `data_explorer_drive_run_playback_url`:
 
 ```text
 https://neuron.oci.applied.dev/data_explorer/library/drives/<data_explorer_uuid>/playback
 ```
 
-Then use the selected `run_uuid` / `custom_id` to create or locate a LogSim run,
-or resolve the bridge through `Ursa DescribeRun(...).sim_run_info.adp_uuid`.
+That secondary route only works when the ID is an actual DriveRun UUID; for many
+Frontier rows `data_explorer_uuid` is a raw/source log identifier, not a
+DriveRun/simulation UUID. Then use the selected `run_uuid` / `custom_id` to
+create or locate a LogSim run, or resolve the bridge through
+`Ursa DescribeRun(...).sim_run_info.adp_uuid`.
 
 ## Geofences
 
