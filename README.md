@@ -116,11 +116,11 @@ python 06_hex_bin_sample.py \
   --plot-output output/hex_sample_r8_map.jpg
 ```
 
-When this script runs, it prints a deduplicated replay/lookup URL list to
-stderr and also writes it to `--urls-output` as TSV:
+When this script runs, it prints a deduplicated Frontier ADP LogSim replay URL
+list to stderr and also writes it to `--urls-output` as TSV:
 
 ```text
-custom_id    run_uuid    data_explorer_url
+custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_url    raw_data_uri    note
 ```
 
 Use `--no-print-urls` if you only want the TSV file and do not want the full
@@ -131,12 +131,26 @@ Outputs include lookup fields for ADP/Data Engine investigation:
 
 - `run_uuid`
 - `custom_id`
+- `adp_logsim_uuid`
+- `logsim_replay_url`
+- `logsim_result_url`
 - `data_explorer_uuid`
 - `data_explorer_url`
 - `raw_data_uri`
 - `map_key`
 - `route`
 - `stack_commit`
+
+`logsim_replay_url` is the Frontier ADP playback URL:
+
+```text
+https://frontier.prod.applied.dev/log_sim/results/sim/<adp_logsim_uuid>/playback
+```
+
+For source drive rows, this field may be empty because there is not yet an ADP
+LogSim simulation run to replay. In that case, use the selected `run_uuid` /
+`custom_id` to create or locate a LogSim run, or resolve the bridge through
+`Ursa DescribeRun(...).sim_run_info.adp_uuid`.
 
 ## Geofences
 

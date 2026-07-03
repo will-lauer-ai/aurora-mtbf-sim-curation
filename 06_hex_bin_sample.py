@@ -35,7 +35,12 @@ import lake_client
 from geofence import load_geofence, point_in_geofence
 
 DATA_EXPLORER_BASE_URL = "https://neuron.oci.applied.dev/data_explorer/v2/library"
-ADP_QUERY_HINT = "Use run_uuid/custom_id in Ursa/Data Engine; use data_explorer_uuid when opening Data Engine/Vizkit."
+FRONTIER_ADP_BASE_URL = "https://frontier.prod.applied.dev"
+ADP_QUERY_HINT = (
+    "LogSim replay URLs require the ADP LogSim simulation UUID. If raw_data_uri "
+    "is a LogSim path, this script infers it from the final S3 path component; "
+    "otherwise use Ursa DescribeRun(...).sim_run_info.adp_uuid after LogSim generation."
+)
 
 OUTPUT_DIR = Path(__file__).parent / "output"
 DEFAULT_BINS_OUTPUT = OUTPUT_DIR / "hex_bins.json"
@@ -62,6 +67,40 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def infer_adp_logsim_uuid(run: dict) -> str | None:
+    """Infer ADP LogSim simulation UUID when available.
+
+    The ADP replay URL uses the ADP simulation UUID, not the Ursa run_uuid.
+    For Ursa LogSim runs, raw_data_uri usually looks like:
+
+        s3://ursa-frontier-prod-raw-logs/LogSim/.../<adp_sim_uuid>/
+        s3://ursa-frontier-prod-raw-logs/LogSim/.../batch-181671/<adp_sim_uuid>/
+
+    For ordinary source drive logs, raw_data_uri is usually under
+    s3://.../truck-XXX/... and there is no LogSim replay URL yet.
+    """
+    for key in ("adp_logsim_uuid", "adp_sim_uuid", "adp_uuid", "simulation_run_uuid"):
+        val = run.get(key)
+        if val:
+            return str(val)
+
+    raw_uri = run.get("raw_data_uri") or run.get("s3_path") or ""
+    if "/LogSim/" not in raw_uri:
+        return None
+    trimmed = raw_uri.rstrip("/")
+    if not trimmed:
+        return None
+    return trimmed.split("/")[-1] or None
+
+
+def make_logsim_result_url(adp_logsim_uuid: str) -> str:
+    return f"{FRONTIER_ADP_BASE_URL}/log_sim/results/sim/{adp_logsim_uuid}"
+
+
+def make_logsim_replay_url(adp_logsim_uuid: str) -> str:
+    return f"{FRONTIER_ADP_BASE_URL}/log_sim/results/sim/{adp_logsim_uuid}/playback"
+
+
 def add_lookup_links(runs: list[dict]) -> list[dict]:
     out = []
     for r in runs:
@@ -71,6 +110,14 @@ def add_lookup_links(runs: list[dict]) -> list[dict]:
         rr["adp_lookup_note"] = ADP_QUERY_HINT
         dx = rr.get("data_explorer_uuid")
         rr["data_explorer_url"] = f"{DATA_EXPLORER_BASE_URL}?log_uuid={dx}" if dx else None
+
+        adp_logsim_uuid = infer_adp_logsim_uuid(rr)
+        rr["adp_logsim_uuid"] = adp_logsim_uuid
+        rr["logsim_result_url"] = make_logsim_result_url(adp_logsim_uuid) if adp_logsim_uuid else None
+        rr["logsim_replay_url"] = make_logsim_replay_url(adp_logsim_uuid) if adp_logsim_uuid else None
+        rr["logsim_replay_note"] = (
+            "OK" if adp_logsim_uuid else "No LogSim replay URL: selected row appears to be a source drive/log, not an ADP LogSim run."
+        )
         out.append(rr)
     return out
 
@@ -248,43 +295,71 @@ def write_json(path: Path, data) -> None:
         json.dump(data, f, indent=2)
 
 
-def write_replay_urls(path: Path, samples: list[dict], *, print_urls: bool = True) -> list[str]:
-    """Write and optionally print unique Data Engine / ADP lookup URLs.
+def write_replay_urls(path: Path, samples: list[dict], *, print_urls: bool = True) -> list[dict]:
+    """Write and optionally print unique Frontier ADP LogSim replay URLs.
 
     Samples are per hex, so the same run can be selected multiple times.
-    This function deduplicates by run UUID / URL so the printed list is a
-    practical replay checklist rather than hundreds of repeated links.
+    This function deduplicates by LogSim URL / run UUID so the printed list is
+    a practical replay checklist rather than hundreds of repeated links.
     """
     seen = set()
-    lines: list[str] = []
+    rows: list[dict] = []
     for s in samples:
         run_uuid = s.get("run_uuid") or s.get("ursa_run_uuid") or ""
         custom_id = s.get("custom_id") or ""
-        url = s.get("data_explorer_url")
-        key = url or run_uuid or custom_id
+        adp_logsim_uuid = s.get("adp_logsim_uuid") or ""
+        logsim_replay_url = s.get("logsim_replay_url") or ""
+        logsim_result_url = s.get("logsim_result_url") or ""
+        data_explorer_url = s.get("data_explorer_url") or ""
+        raw_data_uri = s.get("raw_data_uri") or s.get("s3_path") or ""
+        key = logsim_replay_url or run_uuid or custom_id
         if not key or key in seen:
             continue
         seen.add(key)
-        if url:
-            lines.append(f"{custom_id}\t{run_uuid}\t{url}")
-        else:
-            lines.append(f"{custom_id}\t{run_uuid}\tNO_DATA_EXPLORER_URL")
+        rows.append({
+            "custom_id": custom_id,
+            "ursa_run_uuid": run_uuid,
+            "adp_logsim_uuid": adp_logsim_uuid,
+            "logsim_replay_url": logsim_replay_url,
+            "logsim_result_url": logsim_result_url,
+            "data_explorer_url": data_explorer_url,
+            "raw_data_uri": raw_data_uri,
+            "note": s.get("logsim_replay_note") or "",
+        })
 
+    cols = [
+        "custom_id", "ursa_run_uuid", "adp_logsim_uuid", "logsim_replay_url",
+        "logsim_result_url", "data_explorer_url", "raw_data_uri", "note",
+    ]
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        f.write("custom_id\trun_uuid\tdata_explorer_url\n")
-        for line in lines:
-            f.write(line + "\n")
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=cols, delimiter="\t", extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
 
     if print_urls:
-        print("\nReplay / lookup URLs", file=sys.stderr)
+        replay_rows = [r for r in rows if r.get("logsim_replay_url")]
+        unresolved = [r for r in rows if not r.get("logsim_replay_url")]
+        print("\nFrontier ADP LogSim replay URLs", file=sys.stderr)
         print("=" * 50, file=sys.stderr)
         print(f"Wrote URL list: {path}", file=sys.stderr)
-        for line in lines:
-            custom_id, run_uuid, url = line.split("\t", 2)
-            print(f"- {custom_id} | {run_uuid}", file=sys.stderr)
-            print(f"  {url}", file=sys.stderr)
-    return lines
+        if replay_rows:
+            for r in replay_rows:
+                label = r["adp_logsim_uuid"] or r["custom_id"] or r["ursa_run_uuid"]
+                print(f"- {label}", file=sys.stderr)
+                print(f"  {r['logsim_replay_url']}", file=sys.stderr)
+        else:
+            print("No direct LogSim replay URLs could be inferred from the selected rows.", file=sys.stderr)
+        if unresolved:
+            print("\nRows without LogSim replay URL (likely source drive logs, not LogSim runs):", file=sys.stderr)
+            for r in unresolved[:25]:
+                print(f"- {r['custom_id']} | Ursa: {r['ursa_run_uuid']}", file=sys.stderr)
+                if r.get("data_explorer_url"):
+                    print(f"  Data Engine fallback: {r['data_explorer_url']}", file=sys.stderr)
+            if len(unresolved) > 25:
+                print(f"  ... {len(unresolved) - 25} more unresolved rows in {path}", file=sys.stderr)
+            print("\nTo get a LogSim replay URL, run LogSim for the selected drive segment or resolve the ADP UUID via Ursa DescribeRun(...).sim_run_info.adp_uuid.", file=sys.stderr)
+    return rows
 
 
 def write_sample_csv(path: Path, samples: list[dict]) -> None:
@@ -293,7 +368,8 @@ def write_sample_csv(path: Path, samples: list[dict]) -> None:
         "run_uuid", "custom_id", "vehicle_name", "log_collected_at", "duration_min",
         "sample_lat", "sample_lon", "hex_center_lat", "hex_center_lon",
         "hex_point_count", "hex_distinct_runs", "run_points_in_hex", "sample_dist_to_hex_center_m",
-        "ursa_run_uuid", "data_explorer_uuid", "data_explorer_url", "adp_lookup_custom_id", "adp_lookup_note",
+        "ursa_run_uuid", "adp_logsim_uuid", "logsim_replay_url", "logsim_result_url", "logsim_replay_note",
+        "data_explorer_uuid", "data_explorer_url", "adp_lookup_custom_id", "adp_lookup_note",
         "raw_data_uri", "map_key", "route", "stack_commit",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -485,7 +561,8 @@ def main():
     print(f"\nWrote {args.bins_output}", file=sys.stderr)
     print(f"Wrote {args.sample_json}", file=sys.stderr)
     print(f"Wrote {args.sample_csv}", file=sys.stderr)
-    print(f"Wrote {args.urls_output} ({len(replay_urls)} unique URLs/runs)", file=sys.stderr)
+    n_logsim_urls = sum(1 for r in replay_urls if r.get("logsim_replay_url"))
+    print(f"Wrote {args.urls_output} ({n_logsim_urls} LogSim replay URLs, {len(replay_urls)} unique rows)", file=sys.stderr)
     if args.plot:
         plot_hex_bins(hex_bins, samples, geofence, Path(args.plot_output), sample_dot_size=args.sample_dot_size)
 
