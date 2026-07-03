@@ -42,6 +42,7 @@ DEFAULT_BINS_OUTPUT = OUTPUT_DIR / "hex_bins.json"
 DEFAULT_SAMPLE_JSON = OUTPUT_DIR / "hex_sample.json"
 DEFAULT_SAMPLE_CSV = OUTPUT_DIR / "hex_sample.csv"
 DEFAULT_MAP_OUTPUT = OUTPUT_DIR / "hex_sample_map.jpg"
+DEFAULT_URLS_OUTPUT = OUTPUT_DIR / "hex_sample_urls.txt"
 
 QUERY_CHUNK_SIZE = 20
 DEFAULT_MAX_POINTS_PER_RUN = 500
@@ -247,6 +248,45 @@ def write_json(path: Path, data) -> None:
         json.dump(data, f, indent=2)
 
 
+def write_replay_urls(path: Path, samples: list[dict], *, print_urls: bool = True) -> list[str]:
+    """Write and optionally print unique Data Engine / ADP lookup URLs.
+
+    Samples are per hex, so the same run can be selected multiple times.
+    This function deduplicates by run UUID / URL so the printed list is a
+    practical replay checklist rather than hundreds of repeated links.
+    """
+    seen = set()
+    lines: list[str] = []
+    for s in samples:
+        run_uuid = s.get("run_uuid") or s.get("ursa_run_uuid") or ""
+        custom_id = s.get("custom_id") or ""
+        url = s.get("data_explorer_url")
+        key = url or run_uuid or custom_id
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if url:
+            lines.append(f"{custom_id}\t{run_uuid}\t{url}")
+        else:
+            lines.append(f"{custom_id}\t{run_uuid}\tNO_DATA_EXPLORER_URL")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        f.write("custom_id\trun_uuid\tdata_explorer_url\n")
+        for line in lines:
+            f.write(line + "\n")
+
+    if print_urls:
+        print("\nReplay / lookup URLs", file=sys.stderr)
+        print("=" * 50, file=sys.stderr)
+        print(f"Wrote URL list: {path}", file=sys.stderr)
+        for line in lines:
+            custom_id, run_uuid, url = line.split("\t", 2)
+            print(f"- {custom_id} | {run_uuid}", file=sys.stderr)
+            print(f"  {url}", file=sys.stderr)
+    return lines
+
+
 def write_sample_csv(path: Path, samples: list[dict]) -> None:
     cols = [
         "sample_h3_cell", "sample_h3_resolution", "coverage_h3_resolution",
@@ -406,6 +446,8 @@ def main():
     parser.add_argument("--plot", action="store_true", help="Generate a JPG plot of density + sample buckets + selected samples")
     parser.add_argument("--plot-output", default=str(DEFAULT_MAP_OUTPUT), help="Output JPG path for --plot")
     parser.add_argument("--sample-dot-size", type=float, default=35.0, help="Area of selected-sample dots in plot (default: 35; previous was 115)")
+    parser.add_argument("--urls-output", default=str(DEFAULT_URLS_OUTPUT), help="Output TSV path for unique replay/lookup URLs")
+    parser.add_argument("--no-print-urls", action="store_true", help="Do not print replay/lookup URLs to stderr; still writes --urls-output")
     args = parser.parse_args()
 
     sample_res = args.sample_h3_resolution if args.sample_h3_resolution is not None else max(0, args.h3_resolution - 1)
@@ -438,10 +480,12 @@ def main():
     write_json(Path(args.bins_output), hex_bins)
     write_json(Path(args.sample_json), samples)
     write_sample_csv(Path(args.sample_csv), samples)
+    replay_urls = write_replay_urls(Path(args.urls_output), samples, print_urls=not args.no_print_urls)
     print_summary(hex_bins, samples)
     print(f"\nWrote {args.bins_output}", file=sys.stderr)
     print(f"Wrote {args.sample_json}", file=sys.stderr)
     print(f"Wrote {args.sample_csv}", file=sys.stderr)
+    print(f"Wrote {args.urls_output} ({len(replay_urls)} unique URLs/runs)", file=sys.stderr)
     if args.plot:
         plot_hex_bins(hex_bins, samples, geofence, Path(args.plot_output), sample_dot_size=args.sample_dot_size)
 

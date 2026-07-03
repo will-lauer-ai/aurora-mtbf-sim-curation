@@ -112,7 +112,19 @@ python 06_hex_bin_sample.py \
   --bins-output output/hex_bins_r8.json \
   --sample-json output/hex_sample_r8.json \
   --sample-csv output/hex_sample_r8.csv \
+  --urls-output output/hex_sample_r8_urls.txt \
   --plot-output output/hex_sample_r8_map.jpg
+```
+
+When this script runs, it prints a deduplicated replay/lookup URL list to
+stderr and also writes it to `--urls-output` as TSV:
+
+```text
+custom_id    run_uuid    data_explorer_url
+```
+
+Use `--no-print-urls` if you only want the TSV file and do not want the full
+URL list printed in the terminal.
 ```
 
 Outputs include lookup fields for ADP/Data Engine investigation:
