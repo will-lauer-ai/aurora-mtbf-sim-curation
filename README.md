@@ -120,7 +120,7 @@ When this script runs, it prints a deduplicated Frontier ADP LogSim replay URL
 list to stderr and also writes it to `--urls-output` as TSV:
 
 ```text
-custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    data_explorer_log_playback_url    data_explorer_drive_run_playback_url    raw_data_uri    note
+custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    data_explorer_log_path    data_explorer_log_playback_url    data_explorer_drive_run_playback_url    raw_data_uri    note
 ```
 
 Use `--no-print-urls` if you only want the TSV file and do not want the full
@@ -151,11 +151,15 @@ https://frontier.prod.applied.dev/log_sim/results/sim/<adp_logsim_uuid>/playback
 For source drive rows, this field may be empty because there is not yet an ADP
 LogSim simulation run to replay. In that case, use `data_explorer_playback_url`
 to open the valid source drive/log playback directly. The primary generated
-source-log URL uses the raw S3 log path:
+source-log URL uses the Data Explorer processed log path identifier, e.g.
+`2026-06-28_08-08-12_truck-808`:
 
 ```text
-https://neuron.oci.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-s3-path>
+https://neuron.oci.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-data-explorer-log-path>
 ```
+
+Do not pass the full raw S3 URI to `logPath`; Data Explorer reports `Log path
+... not found` for that form.
 
 The script also keeps a secondary candidate `data_explorer_drive_run_playback_url`:
 
