@@ -26,7 +26,6 @@ import csv
 import json
 import math
 import sys
-from urllib.parse import quote
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -36,8 +35,6 @@ import lake_client
 from geofence import load_geofence, point_in_geofence
 
 FRONTIER_ADP_BASE_URL = "https://frontier.prod.applied.dev"
-DATA_EXPLORER_URSA_PLAYBACK_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/v2/log/playback"
-DATA_EXPLORER_LOG_PLAYBACK_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/library/log/playback"
 DATA_EXPLORER_DRIVE_BASE_URL = f"{FRONTIER_ADP_BASE_URL}/data_explorer/library/drives"
 ADP_QUERY_HINT = (
     "LogSim replay URLs require the ADP LogSim simulation UUID. If raw_data_uri "
@@ -104,24 +101,6 @@ def make_logsim_replay_url(adp_logsim_uuid: str) -> str:
     return f"{FRONTIER_ADP_BASE_URL}/log_sim/results/sim/{adp_logsim_uuid}/playback"
 
 
-def get_data_explorer_log_path(run: dict) -> str | None:
-    """Return the Data Explorer logPath identifier, not the raw S3 URI.
-
-    The multi-source playback route expects the processed drive logPath used by
-    Data Explorer's LogConversion rows, e.g. `2026-06-28_08-08-12_truck-808`.
-    Passing the full raw S3 URI causes `Log path ... not found`.
-    """
-    for key in ("data_explorer_log_path", "log_path", "custom_id"):
-        val = run.get(key)
-        if val:
-            return str(val).strip().rstrip("/")
-
-    raw_uri = (run.get("raw_data_uri") or run.get("s3_path") or "").strip().rstrip("/")
-    if raw_uri:
-        return raw_uri.split("/")[-1]
-    return None
-
-
 def add_lookup_links(runs: list[dict]) -> list[dict]:
     out = []
     for r in runs:
@@ -130,27 +109,9 @@ def add_lookup_links(runs: list[dict]) -> list[dict]:
         rr["adp_lookup_custom_id"] = rr.get("custom_id")
         rr["adp_lookup_note"] = ADP_QUERY_HINT
         dx = rr.get("data_explorer_uuid")
-        ursa_run_uuid = rr.get("run_uuid") or rr.get("ursa_run_uuid")
-        data_explorer_log_path = get_data_explorer_log_path(rr)
-        rr["data_explorer_log_path"] = data_explorer_log_path
-        # Primary direct source-drive playback route. data_explorer_uuid matches iceberg.run_info.uuid
-        # for the converted Frontier drive run; it must be opened on the Frontier ADP host, not Neuron.
-        rr["data_explorer_drive_run_playback_url"] = f"{DATA_EXPLORER_DRIVE_BASE_URL}/{dx}/playback" if dx else None
-        # Debug/secondary candidates only. These can fail if VizKit playback metadata is unavailable
-        # or if the multi-source logPath index does not contain the Frontier log.
-        rr["data_explorer_ursa_playback_url"] = (
-            f"{DATA_EXPLORER_URSA_PLAYBACK_BASE_URL}?ursa={quote(str(ursa_run_uuid), safe='')}"
-            if ursa_run_uuid else None
-        )
-        rr["data_explorer_log_playback_url"] = (
-            f"{DATA_EXPLORER_LOG_PLAYBACK_BASE_URL}?logPath={quote(data_explorer_log_path, safe='')}"
-            if data_explorer_log_path else None
-        )
-        rr["data_explorer_playback_url"] = (
-            rr["data_explorer_drive_run_playback_url"]
-            or rr["data_explorer_ursa_playback_url"]
-            or rr["data_explorer_log_playback_url"]
-        )
+        # Direct source-drive playback route. data_explorer_uuid matches iceberg.run_info.uuid
+        # for the converted Frontier drive run; it must be opened on the Frontier ADP host.
+        rr["data_explorer_playback_url"] = f"{DATA_EXPLORER_DRIVE_BASE_URL}/{dx}/playback" if dx else None
         # Backwards-compatible alias.
         rr["data_explorer_url"] = rr["data_explorer_playback_url"]
 
@@ -354,10 +315,6 @@ def write_replay_urls(path: Path, samples: list[dict], *, print_urls: bool = Tru
         logsim_replay_url = s.get("logsim_replay_url") or ""
         logsim_result_url = s.get("logsim_result_url") or ""
         data_explorer_playback_url = s.get("data_explorer_playback_url") or s.get("data_explorer_url") or ""
-        data_explorer_ursa_playback_url = s.get("data_explorer_ursa_playback_url") or ""
-        data_explorer_log_path = s.get("data_explorer_log_path") or ""
-        data_explorer_log_playback_url = s.get("data_explorer_log_playback_url") or ""
-        data_explorer_drive_run_playback_url = s.get("data_explorer_drive_run_playback_url") or ""
         raw_data_uri = s.get("raw_data_uri") or s.get("s3_path") or ""
         key = logsim_replay_url or run_uuid or custom_id
         if not key or key in seen:
@@ -370,19 +327,13 @@ def write_replay_urls(path: Path, samples: list[dict], *, print_urls: bool = Tru
             "logsim_replay_url": logsim_replay_url,
             "logsim_result_url": logsim_result_url,
             "data_explorer_playback_url": data_explorer_playback_url,
-            "data_explorer_ursa_playback_url": data_explorer_ursa_playback_url,
-            "data_explorer_log_path": data_explorer_log_path,
-            "data_explorer_log_playback_url": data_explorer_log_playback_url,
-            "data_explorer_drive_run_playback_url": data_explorer_drive_run_playback_url,
             "raw_data_uri": raw_data_uri,
             "note": s.get("logsim_replay_note") or "",
         })
 
     cols = [
         "custom_id", "ursa_run_uuid", "adp_logsim_uuid", "logsim_replay_url",
-        "logsim_result_url", "data_explorer_playback_url", "data_explorer_ursa_playback_url",
-        "data_explorer_log_path", "data_explorer_log_playback_url",
-        "data_explorer_drive_run_playback_url", "raw_data_uri", "note",
+        "logsim_result_url", "data_explorer_playback_url", "raw_data_uri", "note",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
@@ -422,9 +373,8 @@ def write_sample_csv(path: Path, samples: list[dict]) -> None:
         "sample_lat", "sample_lon", "hex_center_lat", "hex_center_lon",
         "hex_point_count", "hex_distinct_runs", "run_points_in_hex", "sample_dist_to_hex_center_m",
         "ursa_run_uuid", "adp_logsim_uuid", "logsim_replay_url", "logsim_result_url", "logsim_replay_note",
-        "data_explorer_uuid", "data_explorer_playback_url", "data_explorer_ursa_playback_url",
-        "data_explorer_log_path", "data_explorer_log_playback_url", "data_explorer_drive_run_playback_url",
-        "data_explorer_url", "adp_lookup_custom_id", "adp_lookup_note",
+        "data_explorer_uuid", "data_explorer_playback_url", "data_explorer_url",
+        "adp_lookup_custom_id", "adp_lookup_note",
         "raw_data_uri", "map_key", "route", "stack_commit",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)

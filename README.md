@@ -120,7 +120,7 @@ When this script runs, it prints a deduplicated Frontier ADP LogSim replay URL
 list to stderr and also writes it to `--urls-output` as TSV:
 
 ```text
-custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    data_explorer_ursa_playback_url    data_explorer_log_path    data_explorer_log_playback_url    data_explorer_drive_run_playback_url    raw_data_uri    note
+custom_id    ursa_run_uuid    adp_logsim_uuid    logsim_replay_url    logsim_result_url    data_explorer_playback_url    raw_data_uri    note
 ```
 
 Use `--no-print-urls` if you only want the TSV file and do not want the full
@@ -167,16 +167,8 @@ getLinkInProduct(Product.DATA_EXPLORER, `/library/drives/${runId}/playback`)
 The important bit is the **host**: for Frontier logs, open this on
 `frontier.prod.applied.dev`, not `neuron.oci.applied.dev`.
 
-The script also writes older/debug candidate URLs:
-
-```text
-https://frontier.prod.applied.dev/data_explorer/v2/log/playback?ursa=<ursa_run_uuid>
-https://frontier.prod.applied.dev/data_explorer/library/log/playback?logPath=<url-encoded-data-explorer-log-path>
-```
-
-Those can fail when VizKit playback metadata or the multi-source logPath index is
-not available. Then use the selected `run_uuid` / `custom_id` to create or locate
-a LogSim run, or resolve the bridge through
+Then use the selected `run_uuid` / `custom_id` to create or locate a LogSim run,
+or resolve the bridge through
 `Ursa DescribeRun(...).sim_run_info.adp_uuid`.
 
 ## Geofences
