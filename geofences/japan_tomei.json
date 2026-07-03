@@ -1,0 +1,8 @@
+{
+  "type": "bbox",
+  "name": "Japan Tomei Expressway area",
+  "min_lat": 34.8,
+  "max_lat": 35.6,
+  "min_lon": 138.8,
+  "max_lon": 139.6
+}
